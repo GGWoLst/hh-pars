@@ -2,7 +2,7 @@
 # В отличие от docker-compose.yml — не билдит образ, а тянет готовый из GHCR.
 services:
   bot:
-    image: ghcr.io/OWNER/REPO:latest
+    image: ghcr.io/GGWoLst/hh-pars:latest
     pull_policy: always
     restart: unless-stopped
     env_file:
@@ -25,6 +25,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Веб-панель для просмотра БД. Порт пробрасывается только на loopback самого
+  # сервера — снаружи (даже из локальной сети) недоступна.
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - db
 
 volumes:
   db_data:

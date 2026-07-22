@@ -24,5 +24,15 @@ services:
       timeout: 5s
       retries: 10
 
+  # Веб-панель для просмотра БД. Порт пробрасывается только на loopback —
+  # снаружи (даже из локальной сети) недоступна, только с самой машины.
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - db
+
 volumes:
   db_data:
