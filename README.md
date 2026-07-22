@@ -54,16 +54,35 @@ GitHub-раннеры по умолчанию не имеют доступа к 
 1. **Self-hosted GitHub Actions runner внутри сети (рекомендуется, уже в шаблоне).**
    Ставится агент (`actions-runner`) на машину/сервер в локальной сети, он сам открывает
    исходящее соединение к GitHub и слушает джобы. Входящих портов не требуется.
+
+   Runner ставится и запускается **не от root**, а от отдельного пользователя
+   (`github-runner`), состоящего в группе `docker` — так у него есть доступ к Docker,
+   но не к остальной системе.
+
    ```bash
-   # на целевой машине
+   # на целевой машине, от root
+   useradd -m -s /bin/bash github-runner
+   usermod -aG docker github-runner
+
+   # дальше от имени github-runner
+   su - github-runner
    mkdir actions-runner && cd actions-runner
    curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
    tar xzf actions-runner.tar.gz
+   ./bin/installdependencies.sh
    ./config.sh --url https://github.com/OWNER/REPO --token <TOKEN> --labels self-hosted-local
-   ./svc.sh install && ./svc.sh start
+   exit
+
+   # обратно от root — регистрируем systemd-сервис
+   cd /home/github-runner/actions-runner
+   ./svc.sh install github-runner && ./svc.sh start
    ```
-   Деплой-джоба в `cd.yml` (`runs-on: [self-hosted, self-hosted-local]`) выполнит
-   `docker compose pull && up -d` уже локально, с прямым доступом к сети.
+
+   Файлы для деплоя (`docker-compose.prod.yml`, `.env`) лежат прямо на раннере, в
+   `/opt/hh-pars` (владелец — `github-runner`), а не в чекауте репозитория — так туда
+   не попадают секреты и `.env` не нужно коммитить. Деплой-джоба в `cd.yml`
+   (`runs-on: [self-hosted, self-hosted-local]`) переходит в этот каталог и выполняет
+   `docker compose pull && up -d`.
 
 2. **Pull-based деплой через Watchtower (без раннера вообще).**
    На машине в локальной сети крутится [Watchtower](https://containrrr.dev/watchtower/),
