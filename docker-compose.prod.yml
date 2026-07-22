@@ -1,0 +1,30 @@
+# Используется на целевом хосте в локальной сети (self-hosted runner).
+# В отличие от docker-compose.yml — не билдит образ, а тянет готовый из GHCR.
+services:
+  bot:
+    image: ghcr.io/OWNER/REPO:latest
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hh}
+      POSTGRES_DB: ${POSTGRES_DB:-hh_pars}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hh}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:

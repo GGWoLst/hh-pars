@@ -1,0 +1,65 @@
+# CD-шаблон. Стратегия — GitHub Actions self-hosted runner, поднятый внутри
+# локальной сети (см. раздел "CI/CD в локальной сети" в README).
+#
+# Как это работает:
+#   1. Job "build-and-push" выполняется на обычном github-hosted раннере,
+#      собирает образ и пушит его в GitHub Container Registry (ghcr.io).
+#   2. Job "deploy" выполняется на self-hosted раннере, который физически
+#      находится в локальной сети (например на том же хосте, где крутится бот).
+#      Раннер сам инициирует исходящее соединение к GitHub — открывать порты
+#      наружу и пробрасывать сеть не нужно.
+#   3. На раннере просто делаем `docker compose pull && up -d`.
+#
+# Перед использованием:
+#   - Установить self-hosted runner на машине в локальной сети:
+#     Settings -> Actions -> Runners -> New self-hosted runner.
+#     Дать ему label "self-hosted-local".
+#   - Положить на эту машину файл .env (см. .env.example) и docker-compose.prod.yml.
+#   - Заменить ghcr.io/OWNER/REPO в docker-compose.prod.yml на реальный путь.
+
+name: CD
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: [self-hosted, self-hosted-local]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy (docker compose pull + up)
+        run: |
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d
+          docker image prune -f
