@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from src.bot.handlers import router
@@ -31,7 +32,9 @@ async def main() -> None:
 
     await init_models()
 
-    bot = Bot(token=settings.telegram_bot_token)
+    proxy_url = settings.telegram_proxy_url
+    session = AiohttpSession(proxy=proxy_url) if proxy_url else None
+    bot = Bot(token=settings.telegram_bot_token, session=session)
     dp = Dispatcher()
     dp.include_router(router)
 

@@ -5,9 +5,26 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      TELEGRAM_PROXY_URL: socks5://warp:1080
     depends_on:
       db:
         condition: service_healthy
+      warp:
+        condition: service_started
+
+  # SOCKS5-прокси через Cloudflare WARP — нужен там, где Telegram API
+  # заблокирован на уровне сети/хостера. Бот ходит в Telegram через него.
+  warp:
+    image: caomingjun/warp
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - warp_data:/var/lib/cloudflare-warp
 
   db:
     image: postgres:16-alpine
@@ -36,3 +53,4 @@ services:
 
 volumes:
   db_data:
+  warp_data:

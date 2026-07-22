@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    # SOCKS5/HTTP-прокси для доступа к Telegram API (нужен там, где Telegram заблокирован).
+    # Пример: socks5://warp:1080
+    telegram_proxy_url: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://hh:hh@db:5432/hh_pars"
