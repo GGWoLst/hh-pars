@@ -38,6 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ghcr.io требует lowercase имя образа, а github.repository сохраняет
+      # регистр владельца (GGWoLst/hh-pars) — приводим отдельным шагом.
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}

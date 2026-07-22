@@ -2,7 +2,7 @@
 # В отличие от docker-compose.yml — не билдит образ, а тянет готовый из GHCR.
 services:
   bot:
-    image: ghcr.io/GGWoLst/hh-pars:latest
+    image: ghcr.io/ggwolst/hh-pars:latest
     pull_policy: always
     restart: unless-stopped
     env_file:
