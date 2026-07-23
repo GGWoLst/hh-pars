@@ -7,6 +7,11 @@ services:
       - .env
     environment:
       TELEGRAM_PROXY_URL: socks5://warp:1080
+      # Ограничение исходящей полосы бота, чтобы не мешать остальным сервисам
+      # на этом же хосте (например VPN-ноде).
+      BANDWIDTH_LIMIT_MBIT: "100"
+    cap_add:
+      - NET_ADMIN
     depends_on:
       db:
         condition: service_healthy
