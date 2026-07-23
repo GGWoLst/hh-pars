@@ -60,7 +60,19 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: [self-hosted, self-hosted-local]
+    permissions:
+      packages: read
     steps:
+      # Логинимся в GHCR тем же GITHUB_TOKEN, что и build-and-push — так
+      # deploy работает независимо от того, публичный пакет или приватный
+      # (сохраняем видимость приватной по умолчанию).
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # docker-compose.prod.yml и .env живут на самом раннере (/opt/hh-pars),
       # а не в чекауте репозитория — там нет секретов и .env не коммитится.
       - name: Deploy (docker compose pull + up)
