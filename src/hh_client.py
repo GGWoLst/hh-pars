@@ -27,6 +27,7 @@ class HHClient:
         self,
         text: str = "",
         area: str = "",
+        experience: str | None = None,
         page: int = 0,
     ) -> dict:
         params = {
@@ -34,6 +35,8 @@ class HHClient:
             "area": area or settings.hh_search_area,
             "page": page,
         }
+        if experience:
+            params["experience"] = experience
         response = await self._client.get(HH_SEARCH_URL, params=params)
         response.raise_for_status()
 

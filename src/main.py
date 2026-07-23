@@ -3,27 +3,18 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from src.bot.handlers import router
+from src.bot.handlers import router as handlers_router
+from src.bot.presets import router as presets_router
+from src.bot.report import router as report_router
 from src.config import settings
-from src.parser import fetch_new_vacancies
+from src.parser import check_new_vacancies_for_all_users
 from src.storage.db import init_models
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
-
-
-async def notify_new_vacancies(bot: Bot) -> None:
-    vacancies = await fetch_new_vacancies()
-    if not vacancies or not settings.telegram_chat_id:
-        return
-
-    for vacancy in vacancies:
-        await bot.send_message(
-            settings.telegram_chat_id,
-            f"{vacancy.name} — {vacancy.employer}\n{vacancy.url}",
-        )
 
 
 async def main() -> None:
@@ -35,12 +26,14 @@ async def main() -> None:
     proxy_url = settings.telegram_proxy_url
     session = AiohttpSession(proxy=proxy_url) if proxy_url else None
     bot = Bot(token=settings.telegram_bot_token, session=session)
-    dp = Dispatcher()
-    dp.include_router(router)
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(presets_router)
+    dp.include_router(report_router)
+    dp.include_router(handlers_router)
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        notify_new_vacancies,
+        check_new_vacancies_for_all_users,
         "interval",
         minutes=settings.parse_interval_minutes,
         args=[bot],
