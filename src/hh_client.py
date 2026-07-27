@@ -32,6 +32,7 @@ class HHClient:
     ) -> dict:
         params = {
             "text": text or settings.hh_search_text,
+            "search_field": "name",
             "area": area or settings.hh_search_area,
             "page": page,
         }
