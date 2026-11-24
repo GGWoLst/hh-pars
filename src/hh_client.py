@@ -21,7 +21,12 @@ class HHClient:
             "User-Agent": settings.hh_user_agent,
             "Accept-Language": "ru-RU,ru;q=0.9",
         }
-        self._client = httpx.AsyncClient(headers=headers, timeout=15, follow_redirects=True)
+        self._client = httpx.AsyncClient(
+            headers=headers,
+            timeout=15,
+            follow_redirects=True,
+            proxy=settings.hh_proxy_url or None,
+        )
 
     async def search_vacancies(
         self,

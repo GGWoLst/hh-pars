@@ -1,37 +1,31 @@
-# Используется на целевом хосте в локальной сети (self-hosted runner).
-# В отличие от docker-compose.yml — не билдит образ, а тянет готовый из GHCR.
+# Боевой конфиг для главного узла (/root/hh-pars). В отличие от docker-compose.yml
+# не собирает образ, а запускает готовый: HH_PARS_IMAGE в .env (по умолчанию
+# :latest из GHCR). Обновляет образ CD (deploy.sh на сервере), сам файл —
+# копируется на сервер руками при изменении.
+#
+# WARP здесь не нужен: с главного узла Telegram доступен напрямую. hh.ru
+# парсится через SOCKS RU-ноды — HH_PROXY_URL в .env.
 services:
   bot:
-    image: ghcr.io/ggwolst/hh-pars:latest
-    pull_policy: always
+    image: ${HH_PARS_IMAGE:-ghcr.io/ggwolst/hh-pars:latest}
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      TELEGRAM_PROXY_URL: socks5://warp:1080
       # Ограничение исходящей полосы бота, чтобы не мешать остальным сервисам
-      # на этом же хосте (например VPN-ноде).
+      # на этом же хосте.
       BANDWIDTH_LIMIT_MBIT: "100"
     cap_add:
       - NET_ADMIN
+    mem_limit: 384m
     depends_on:
       db:
         condition: service_healthy
-      warp:
-        condition: service_started
-
-  # SOCKS5-прокси через Cloudflare WARP — нужен там, где Telegram API
-  # заблокирован на уровне сети/хостера. Бот ходит в Telegram через него.
-  warp:
-    image: caomingjun/warp
-    restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv4.conf.all.src_valid_mark=1
-    volumes:
-      - warp_data:/var/lib/cloudflare-warp
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   db:
     image: postgres:16-alpine
@@ -42,22 +36,25 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-hh_pars}
     volumes:
       - db_data:/var/lib/postgresql/data
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hh}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *logging
 
   # Веб-панель для просмотра БД. Порт пробрасывается только на loopback самого
-  # сервера — снаружи (даже из локальной сети) недоступна.
+  # сервера — снаружи недоступна, заходить через SSH-туннель.
   adminer:
     image: adminer:4
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
+    mem_limit: 128m
     depends_on:
       - db
+    logging: *logging
 
 volumes:
   db_data:
-  warp_data:

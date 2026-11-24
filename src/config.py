@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     hh_client_secret: str = ""
     hh_access_token: str = ""
     hh_user_agent: str = "hh-parser-bot/1.0 (change-me@example.com)"
+    # SOCKS5/HTTP-прокси для запросов к hh.ru: парсинг идёт с российского IP,
+    # а не с адреса хостинга, где крутится бот. Пусто — напрямую.
+    # Пример: socks5://17.9.7.5:1080
+    hh_proxy_url: str = ""
 
     # Telegram
     telegram_bot_token: str = ""

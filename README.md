@@ -1,6 +1,7 @@
 # hh-pars
 
-Каркас Telegram-бота, который парсит вакансии с hh.ru API и присылает новые в чат.
+Telegram-бот (`@ggparswolstbot`), который по пресетам пользователей парсит вакансии
+с hh.ru (HTML-страница поиска — JSON API отдаёт 403 датацентровым IP) и присылает новые в чат.
 
 Стек: Python 3.12, aiogram 3, httpx, SQLAlchemy (async) + PostgreSQL, APScheduler, Docker.
 
@@ -9,7 +10,7 @@
 ```
 src/
   config.py        # настройки из .env (pydantic-settings)
-  hh_client.py      # клиент к api.hh.ru
+  hh_client.py      # парсер страницы поиска hh.ru
   parser.py         # логика поиска новых вакансий и сохранения в БД
   bot/handlers.py   # хендлеры aiogram
   storage/          # SQLAlchemy модели + подключение к БД
@@ -33,6 +34,8 @@ docker compose up --build
   доступ к приватным данным hh.ru API (обычный поиск вакансий работает без токена, но требует `HH_USER_AGENT`).
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — бот и чат для уведомлений.
 - `DATABASE_URL` — строка подключения к PostgreSQL.
+- `HH_PROXY_URL` — прокси для запросов к hh.ru (на главном узле — SOCKS RU-ноды).
+- `TELEGRAM_PROXY_URL` — прокси к Telegram API, только где он заблокирован.
 - `PARSE_INTERVAL_MINUTES`, `HH_SEARCH_TEXT`, `HH_SEARCH_AREA` — параметры парсинга.
 
 ## CI/CD
@@ -44,62 +47,41 @@ docker compose up --build
 
 ### CD (`.github/workflows/cd.yml`)
 
-Шаблон без привязки к конкретному хостингу. Собирает и пушит образ в GHCR, затем деплоит.
+На каждый push в `main` (и тег `v*`):
 
-## Как задеплоить в локальную сеть (без белого IP / проброса портов)
+1. `build-and-push` собирает образ и пушит в GHCR: `ghcr.io/ggwolst/hh-pars:latest` и `:<sha коммита>`.
+2. `deploy` заходит по SSH на главный узел и запускает там `deploy.sh` с образом этого коммита.
 
-GitHub-раннеры по умолчанию не имеют доступа к машинам в локальной сети, а открывать
-входящие порты наружу ради деплоя — плохая идея. Рабочие варианты:
+Деплой включается переменной репозитория `DEPLOY_ENABLED=true` и секретами
+`SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_KEY`, `SSH_FINGERPRINT`. Без них job пропускается,
+образ всё равно собирается.
 
-1. **Self-hosted GitHub Actions runner внутри сети (рекомендуется, уже в шаблоне).**
-   Ставится агент (`actions-runner`) на машину/сервер в локальной сети, он сам открывает
-   исходящее соединение к GitHub и слушает джобы. Входящих портов не требуется.
+## Деплой (главный узел)
 
-   Runner ставится и запускается **не от root**, а от отдельного пользователя
-   (`github-runner`), состоящего в группе `docker` — так у него есть доступ к Docker,
-   но не к остальной системе.
+Бот живёт на главном узле инфраструктуры, а не в локальной сети:
 
-   ```bash
-   # на целевой машине, от root
-   useradd -m -s /bin/bash github-runner
-   usermod -aG docker github-runner
+- приложение — `/root/hh-pars`: `docker-compose.prod.yml` (копия из репо) и `.env` (секреты, не в git).
+  В `.env` заданы `COMPOSE_FILE=docker-compose.prod.yml` и `HH_PARS_IMAGE` — поэтому
+  `docker compose ps/logs/up` там работают без `-f`;
+- Telegram — напрямую (WARP, как на старом сервере, не нужен);
+- hh.ru — через SOCKS5 RU-ноды: `HH_PROXY_URL=socks5://17.9.7.5:1080` (доступ с главного узла
+  разрешён на стороне ноды);
+- `deploy.sh` — копия [deploy/server-deploy.sh](deploy/server-deploy.sh) в `/root/scripts/hh-pars/`,
+  принудительная команда ключа деплоя в `authorized_keys` (`command=…,restrict`): ключ из
+  GitHub не даёт shell и умеет только обновить образ сервиса `bot`. Журнал — `deploy.log` рядом.
 
-   # дальше от имени github-runner
-   su - github-runner
-   mkdir actions-runner && cd actions-runner
-   curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
-   tar xzf actions-runner.tar.gz
-   ./bin/installdependencies.sh
-   ./config.sh --url https://github.com/OWNER/REPO --token <TOKEN> --labels self-hosted-local
-   exit
+Что обновляет CD, а что — руками:
 
-   # обратно от root — регистрируем systemd-сервис
-   cd /home/github-runner/actions-runner
-   ./svc.sh install github-runner && ./svc.sh start
-   ```
+- образ бота — CD;
+- `docker-compose.prod.yml` и `.env` — руками (скопировать на сервер, `docker compose up -d`);
+- сам `deploy.sh` — руками (CD его не трогает).
 
-   Файлы для деплоя (`docker-compose.prod.yml`, `.env`) лежат прямо на раннере, в
-   `/opt/hh-pars` (владелец — `github-runner`), а не в чекауте репозитория — так туда
-   не попадают секреты и `.env` не нужно коммитить. Деплой-джоба в `cd.yml`
-   (`runs-on: [self-hosted, self-hosted-local]`) переходит в этот каталог и выполняет
-   `docker compose pull && up -d`.
+Откат на прежний образ (они остаются на диске):
 
-2. **Pull-based деплой через Watchtower (без раннера вообще).**
-   На машине в локальной сети крутится [Watchtower](https://containrrr.dev/watchtower/),
-   который сам поллит registry и обновляет контейнер при появлении новой версии образа.
-   GitHub Actions в этом случае только собирает и пушит образ в GHCR — деплоить руками
-   ничего не нужно, никакой инфраструктуры для входящих соединений не требуется:
-   ```yaml
-   watchtower:
-     image: containrrr/watchtower
-     volumes:
-       - /var/run/docker.sock:/var/run/docker.sock
-     command: --interval 300 hh-pars-bot
-   ```
+```bash
+cd /root/hh-pars
+sed -i 's|^HH_PARS_IMAGE=.*|HH_PARS_IMAGE=ghcr.io/ggwolst/hh-pars:<sha>|' .env
+docker compose up -d bot
+```
 
-3. **VPN между GitHub-раннером и локальной сетью** (Tailscale/WireGuard action) — если
-   нужен классический push-деплой (`ssh` + `docker compose`) без self-hosted раннера.
-   Сложнее в настройке, обычно избыточно для одного бота — вариант 1 или 2 предпочтительнее.
-
-Шаблон использует вариант 1. `docker-compose.prod.yml` — конфиг для целевой машины,
-тянет готовый образ из GHCR вместо локальной сборки.
+Подробности и откат всей установки — `/root/scripts/hh-pars/README.md` на сервере.

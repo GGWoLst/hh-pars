@@ -1,21 +1,18 @@
-# CD-шаблон. Стратегия — GitHub Actions self-hosted runner, поднятый внутри
-# локальной сети (см. раздел "CI/CD в локальной сети" в README).
+# CD: образ в GHCR → деплой на главный узел по SSH.
 #
-# Как это работает:
-#   1. Job "build-and-push" выполняется на обычном github-hosted раннере,
-#      собирает образ и пушит его в GitHub Container Registry (ghcr.io).
-#   2. Job "deploy" выполняется на self-hosted раннере, который физически
-#      находится в локальной сети (например на том же хосте, где крутится бот).
-#      Раннер сам инициирует исходящее соединение к GitHub — открывать порты
-#      наружу и пробрасывать сеть не нужно.
-#   3. На раннере просто делаем `docker compose pull && up -d`.
+#   1. build-and-push (github-hosted) собирает образ и пушит в ghcr.io
+#      с тегами :latest и :<sha коммита>.
+#   2. deploy (github-hosted) заходит по SSH на сервер ключом из секрета
+#      SSH_KEY. На сервере ключ ограничен принудительной командой
+#      (authorized_keys: command="/root/scripts/hh-pars/deploy.sh",restrict):
+#      shell он не даёт, сервер выполняет только свой deploy.sh, а строка
+#      script ниже — его аргументы. deploy.sh проверяет, что образ из
+#      ghcr.io/ggwolst/hh-pars, логинится в GHCR переданным токеном (живёт,
+#      пока идёт запуск), делает pull и up -d только для сервиса bot.
 #
-# Перед использованием:
-#   - Установить self-hosted runner на машине в локальной сети:
-#     Settings -> Actions -> Runners -> New self-hosted runner.
-#     Дать ему label "self-hosted-local".
-#   - Положить на эту машину файл .env (см. .env.example) и docker-compose.prod.yml.
-#   - Заменить ghcr.io/OWNER/REPO в docker-compose.prod.yml на реальный путь.
+# Включение — переменная репозитория DEPLOY_ENABLED=true и секреты
+# SSH_HOST, SSH_PORT, SSH_USER, SSH_KEY, SSH_FINGERPRINT (SHA256 ключа сервера).
+# Без них деплой пропускается, образ всё равно собирается.
 
 name: CD
 
@@ -35,13 +32,18 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
       # ghcr.io требует lowercase имя образа, а github.repository сохраняет
       # регистр владельца (GGWoLst/hh-pars) — приводим отдельным шагом.
       - name: Set lowercase image name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+        id: image
+        run: |
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -59,25 +61,21 @@ jobs:
 
   deploy:
     needs: build-and-push
-    runs-on: [self-hosted, self-hosted-local]
+    if: vars.DEPLOY_ENABLED == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
-      # Логинимся в GHCR тем же GITHUB_TOKEN, что и build-and-push — так
-      # deploy работает независимо от того, публичный пакет или приватный
-      # (сохраняем видимость приватной по умолчанию).
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # docker-compose.prod.yml и .env живут на самом раннере (/opt/hh-pars),
-      # а не в чекауте репозитория — там нет секретов и .env не коммитится.
-      - name: Deploy (docker compose pull + up)
-        working-directory: /opt/hh-pars
-        run: |
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d
-          docker image prune -f
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          script: deploy ${{ needs.build-and-push.outputs.image }}:${{ github.sha }} ${{ github.actor }} ${{ secrets.GITHUB_TOKEN }}
