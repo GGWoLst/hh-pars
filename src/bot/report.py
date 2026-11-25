@@ -9,9 +9,15 @@ from sqlalchemy import select
 from src.bot.keyboards import MAIN_MENU_REPORT, PERIODS, period_kb, preset_label
 from src.sources import SOURCE_LABELS, source_of
 from src.storage.db import get_session
-from src.storage.models import FoundVacancy, SearchPreset
+from src.storage.models import FoundVacancy, SearchPreset, VacancyDecision
 
 router = Router()
+
+_DECISIONS = {
+    "applied": "отклик отправлен",
+    "rejected": "отклонено",
+    "manual": "откликнуться на сайте",
+}
 
 _PERIOD_DELTAS = {
     "day": timedelta(days=1),
@@ -38,8 +44,9 @@ async def send_report(callback: CallbackQuery) -> None:
     async with get_session() as session:
         rows = (
             await session.execute(
-                select(FoundVacancy, SearchPreset)
+                select(FoundVacancy, SearchPreset, VacancyDecision.status)
                 .join(SearchPreset, FoundVacancy.preset_id == SearchPreset.id)
+                .outerjoin(VacancyDecision, VacancyDecision.found_vacancy_id == FoundVacancy.id)
                 .where(
                     SearchPreset.user_id == callback.from_user.id,
                     FoundVacancy.found_at >= since,
@@ -58,9 +65,9 @@ async def send_report(callback: CallbackQuery) -> None:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Вакансии"
-    sheet.append(["Найдено", "Пресет", "Вакансия", "Компания", "Источник", "Ссылка"])
+    sheet.append(["Найдено", "Пресет", "Вакансия", "Компания", "Источник", "Решение", "Ссылка"])
 
-    for vacancy, preset in rows:
+    for vacancy, preset, decision in rows:
         sheet.append(
             [
                 vacancy.found_at.strftime("%Y-%m-%d %H:%M"),
@@ -68,6 +75,7 @@ async def send_report(callback: CallbackQuery) -> None:
                 vacancy.name,
                 vacancy.employer or "—",
                 SOURCE_LABELS[source_of(vacancy.vacancy_id)],
+                _DECISIONS.get(decision, decision or ""),
                 vacancy.url,
             ]
         )

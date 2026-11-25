@@ -7,10 +7,11 @@ import httpx
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
+from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.bot.keyboards import habr_query_params, preset_label, preset_query_text
+from src.bot.keyboards import decision_kb, habr_query_params, preset_label, preset_query_text
 from src.config import settings
 from src.habr_client import HabrClient
 from src.hh_client import HHClient
@@ -39,7 +40,18 @@ def format_vacancy(item: dict, preset: SearchPreset) -> str:
     return "\n".join(lines)
 
 
-async def send_vacancy(bot: Bot, chat_id: int, text: str) -> bool:
+# Новая вакансия: как пришла с площадки (для текста) и запись в БД (её id — в кнопках).
+NewVacancy = tuple[dict, FoundVacancy]
+
+
+def vacancy_markup(preset: SearchPreset, record: FoundVacancy) -> InlineKeyboardMarkup | None:
+    """Кнопки «Подтвердить / Отклонить» — только в чате владельца бота."""
+    return decision_kb(record.id) if settings.is_owner(preset.user_id) else None
+
+
+async def send_vacancy(
+    bot: Bot, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None = None
+) -> bool:
     """Отправляет сообщение о вакансии; ошибки Telegram не прерывают проход.
 
     Flood control пережидаем и пробуем снова, остальное (бот заблокирован, сбой сети) —
@@ -47,7 +59,9 @@ async def send_vacancy(bot: Bot, chat_id: int, text: str) -> bool:
     """
     for attempt in range(1, SEND_ATTEMPTS + 1):
         try:
-            await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
+            await bot.send_message(
+                chat_id, text, parse_mode=ParseMode.HTML, reply_markup=reply_markup
+            )
             return True
         except TelegramRetryAfter as exc:
             error: TelegramAPIError = exc
@@ -129,7 +143,9 @@ async def _sources_seen(session, preset_id: int) -> set[str]:
     return {HABR if flag else HH for flag in flags}
 
 
-async def _find_new_vacancies(session, sources: VacancySources, preset: SearchPreset) -> list[dict]:
+async def _find_new_vacancies(
+    session, sources: VacancySources, preset: SearchPreset
+) -> list[NewVacancy]:
     """Тянет вакансии по пресету, сохраняет новые и возвращает те, о которых надо сообщить."""
     items = await sources.fetch(preset)
     if not items:
@@ -175,19 +191,18 @@ async def _find_new_vacancies(session, sources: VacancySources, preset: SearchPr
         seen_on.add(source)
         known_ids.add(item["id"])
 
-        session.add(
-            FoundVacancy(
-                preset_id=preset.id,
-                vacancy_id=item["id"],
-                name=item["name"],
-                employer=employer,
-                url=item["alternate_url"],
-            )
+        record = FoundVacancy(
+            preset_id=preset.id,
+            vacancy_id=item["id"],
+            name=item["name"],
+            employer=employer,
+            url=item["alternate_url"],
         )
+        session.add(record)
         if seen_sources and source not in seen_sources:
             silent[source] = silent.get(source, 0) + 1
             continue
-        new_items.append(item)
+        new_items.append((item, record))
 
     for source, count in silent.items():
         logger.info(
@@ -217,13 +232,20 @@ async def check_new_vacancies_for_all_users(bot: Bot) -> None:
                 # Фиксируем найденное до рассылки и по каждому пресету: если проход
                 # оборвётся дальше, повторно эти вакансии никому не придут.
                 await session.commit()
-                for item in new_items:
-                    await send_vacancy(bot, preset.user.chat_id, format_vacancy(item, preset))
+                for item, record in new_items:
+                    await send_vacancy(
+                        bot,
+                        preset.user.chat_id,
+                        format_vacancy(item, preset),
+                        reply_markup=vacancy_markup(preset, record),
+                    )
 
     logger.info("Проверка вакансий по всем пресетам завершена")
 
 
-async def check_new_vacancies_for_user(user_id: int) -> list[tuple[SearchPreset, list[dict]]]:
+async def check_new_vacancies_for_user(
+    user_id: int,
+) -> list[tuple[SearchPreset, list[NewVacancy]]]:
     """Ручная проверка по кнопке: только активные пресеты конкретного пользователя."""
     async with get_session() as session:
         presets = (
@@ -234,7 +256,7 @@ async def check_new_vacancies_for_user(user_id: int) -> list[tuple[SearchPreset,
             )
         ).all()
 
-        result: list[tuple[SearchPreset, list[dict]]] = []
+        result: list[tuple[SearchPreset, list[NewVacancy]]] = []
         async with VacancySources() as sources:
             for preset in presets:
                 new_items = await _find_new_vacancies(session, sources, preset)

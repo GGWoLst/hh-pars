@@ -35,5 +35,22 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Отклики по кнопке «Подтвердить» под вакансией — только для владельца бота,
+    # от его аккаунтов hh.ru и Хабр Карьеры (cookies сессии из браузера).
+    # 0 — отклики выключены, кнопок нет.
+    owner_telegram_id: int = 0
+    # Ключ Fernet для cookies в БД. Сгенерировать:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Сменился ключ — сохранённые входы не расшифровать, подключать заново.
+    session_encryption_key: str = ""
+    # User-Agent запросов от имени владельца: как у обычного браузера, а не бота.
+    browser_user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    )
+
+    def is_owner(self, user_id: int) -> bool:
+        return bool(self.owner_telegram_id) and user_id == self.owner_telegram_id
+
 
 settings = Settings()

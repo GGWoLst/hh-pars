@@ -115,16 +115,50 @@ MAIN_MENU_NEW_PRESET = "➕ Новый пресет"
 MAIN_MENU_MY_PRESETS = "📋 Мои пресеты"
 MAIN_MENU_CHECK_NOW = "🔍 Проверить сейчас"
 MAIN_MENU_REPORT = "📊 Отчёт Excel"
+MAIN_MENU_APPLY = "⚙️ Отклики"  # только у владельца бота
+
+MAIN_MENU_LABELS = {
+    MAIN_MENU_NEW_PRESET,
+    MAIN_MENU_MY_PRESETS,
+    MAIN_MENU_CHECK_NOW,
+    MAIN_MENU_REPORT,
+    MAIN_MENU_APPLY,
+}
 
 
-def main_menu_kb() -> ReplyKeyboardMarkup:
+def main_menu_kb(owner: bool = False) -> ReplyKeyboardMarkup:
+    last_row = [KeyboardButton(text=MAIN_MENU_REPORT)]
+    if owner:
+        last_row.append(KeyboardButton(text=MAIN_MENU_APPLY))
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=MAIN_MENU_NEW_PRESET)],
             [KeyboardButton(text=MAIN_MENU_MY_PRESETS), KeyboardButton(text=MAIN_MENU_CHECK_NOW)],
-            [KeyboardButton(text=MAIN_MENU_REPORT)],
+            last_row,
         ],
         resize_keyboard=True,
+    )
+
+
+def decision_kb(found_vacancy_id: int) -> InlineKeyboardMarkup:
+    """Кнопки под вакансией у владельца: откликнуться или убрать."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить", callback_data=f"apply:{found_vacancy_id}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить", callback_data=f"reject:{found_vacancy_id}"
+                ),
+            ]
+        ]
+    )
+
+
+def cancel_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="acc:cancel")]]
     )
 
 

@@ -6,6 +6,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from src.bot.apply import router as apply_router
 from src.bot.handlers import router as handlers_router
 from src.bot.presets import router as presets_router
 from src.bot.report import router as report_router
@@ -27,6 +28,8 @@ async def main() -> None:
     session = AiohttpSession(proxy=proxy_url) if proxy_url else None
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dp = Dispatcher(storage=MemoryStorage())
+    # Первым: его FSM-шаги (cookies, письмо) должны перехватить текст владельца.
+    dp.include_router(apply_router)
     dp.include_router(presets_router)
     dp.include_router(report_router)
     dp.include_router(handlers_router)

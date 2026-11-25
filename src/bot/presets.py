@@ -15,6 +15,7 @@ from src.bot.keyboards import (
     stack_kb,
 )
 from src.bot.states import PresetForm
+from src.config import settings
 from src.storage.db import get_session
 from src.storage.models import SearchPreset
 
@@ -75,7 +76,7 @@ async def area_chosen(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
         f"Готово! Поставил на мониторинг:\n{label}",
-        reply_markup=main_menu_kb(),
+        reply_markup=main_menu_kb(owner=settings.is_owner(callback.from_user.id)),
     )
     await callback.answer()
 

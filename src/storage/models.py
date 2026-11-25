@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -61,3 +70,50 @@ class FoundVacancy(Base):
     found_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     preset: Mapped["SearchPreset"] = relationship(back_populates="found_vacancies")
+    decision: Mapped["VacancyDecision | None"] = relationship(
+        back_populates="vacancy", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class VacancyDecision(Base):
+    """Что владелец сделал с вакансией по кнопкам под ней.
+
+    Отдельная таблица, а не колонка в found_vacancies: init_models делает только
+    create_all, а он не добавляет колонки в существующие таблицы.
+    """
+
+    __tablename__ = "vacancy_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    found_vacancy_id: Mapped[int] = mapped_column(ForeignKey("found_vacancies.id"), unique=True)
+    status: Mapped[str] = mapped_column(String)  # applied | rejected | manual
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    vacancy: Mapped["FoundVacancy"] = relationship(back_populates="decision")
+
+
+class AccountSession(Base):
+    """Вход владельца на площадку для откликов: cookies браузерной сессии, зашифрованные."""
+
+    __tablename__ = "account_sessions"
+    __table_args__ = (UniqueConstraint("user_id", "source"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
+    source: Mapped[str] = mapped_column(String)  # hh | habr
+    cookies: Mapped[str] = mapped_column(Text)  # Fernet(JSON {имя: значение})
+    account_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    resume_id: Mapped[str | None] = mapped_column(String, nullable=True)  # hash резюме hh.ru
+    resume_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ApplySettings(Base):
+    __tablename__ = "apply_settings"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    # Шаблон сопроводительного письма; {вакансия} и {компания} подставляются.
+    letter_template: Mapped[str] = mapped_column(Text, default="")
