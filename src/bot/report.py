@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from src.bot.keyboards import MAIN_MENU_REPORT, PERIODS, period_kb, preset_label
+from src.sources import SOURCE_LABELS, source_of
 from src.storage.db import get_session
 from src.storage.models import FoundVacancy, SearchPreset
 
@@ -57,7 +58,7 @@ async def send_report(callback: CallbackQuery) -> None:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Вакансии"
-    sheet.append(["Найдено", "Пресет", "Вакансия", "Компания", "Ссылка"])
+    sheet.append(["Найдено", "Пресет", "Вакансия", "Компания", "Источник", "Ссылка"])
 
     for vacancy, preset in rows:
         sheet.append(
@@ -66,6 +67,7 @@ async def send_report(callback: CallbackQuery) -> None:
                 preset_label(preset.profession, preset.stack, preset.experience, preset.area),
                 vacancy.name,
                 vacancy.employer or "—",
+                SOURCE_LABELS[source_of(vacancy.vacancy_id)],
                 vacancy.url,
             ]
         )

@@ -33,6 +33,51 @@ PROFESSION_QUERY = {
     "pm": "project manager IT",
 }
 
+# Хабр Карьера фильтрует по своим id, а не по тексту: её q= полнотекстовый и шумный.
+# Справочники — блок data-ssr-state на career.habr.com/vacancies.
+# s[] — специализации, объединяются по ИЛИ.
+HABR_SPECIALIZATIONS = {
+    "backend": (2,),
+    "frontend": (3,),
+    "fullstack": (4,),
+    "mobile": (5,),
+    "data": (44, 125),  # Data Scientist, ML-разработчик
+    "devops": (22,),
+    "qa": (12, 10),  # тестировщик, автоматизация тестирования
+    "analyst": (43,),  # аналитик данных
+    "sysadmin": (17, 18),  # системный администратор, администратор серверов
+    "pm": (32, 34),  # менеджер проекта, менеджер продукта
+}
+
+# skills[] объединяются по И, поэтому несколько навыков — отдельные запросы.
+HABR_SKILLS = {
+    "python": (446,),
+    "java": (1012,),
+    "go": (101,),
+    "js": (264, 245),  # JavaScript, TypeScript
+    "csharp": (706,),
+    "php": (1005,),
+    "cpp": (172,),
+    "sql": (322,),
+    "onec": (669,),  # разработка под 1С
+}
+
+# qid[] — грейд, по ИЛИ: Intern 1, Junior 3, Middle 4, Senior 5, Lead 6.
+# Стажа, как на hh.ru, у Хабра нет — переводим примерно. Вакансии без грейда
+# (~15%) фильтр отбрасывает, поэтому при «Любом опыте» его не задаём.
+HABR_GRADES = {
+    "noExperience": (1, 3),
+    "between1And3": (3, 4),
+    "between3And6": (4, 5),
+    "moreThan6": (5, 6),
+}
+
+# Фильтра «вся Россия» у Хабра нет — для неё город не задаём.
+HABR_CITIES = {
+    "1": 678,
+    "2": 679,
+}
+
 STACKS = {
     "python": "Python",
     "java": "Java",
@@ -133,3 +178,25 @@ def preset_query_text(profession: str, stack: str) -> str:
     if stack != "any":
         query = f"{query} {STACKS.get(stack, stack)}"
     return query
+
+
+def habr_query_params(
+    profession: str, stack: str, experience: str | None, area: str
+) -> list[list[tuple[str, int]]]:
+    """Фильтры запроса к Хабр Карьере по пресету — по набору на каждый навык стека.
+
+    Пустой список — профессии нет в справочнике Хабра, площадку для пресета пропускаем.
+    """
+    specializations = HABR_SPECIALIZATIONS.get(profession)
+    if not specializations:
+        return []
+
+    base = [("s[]", spec) for spec in specializations]
+    base += [("qid[]", grade) for grade in HABR_GRADES.get(experience or "any", ())]
+    if area in HABR_CITIES:
+        base.append(("city_id", HABR_CITIES[area]))
+
+    skills = HABR_SKILLS.get(stack)
+    if not skills:
+        return [base]
+    return [[*base, ("skills[]", skill)] for skill in skills]

@@ -4,6 +4,7 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from src.config import settings
+from src.sources import HH
 
 HH_SEARCH_URL = "https://hh.ru/search/vacancy"
 
@@ -71,6 +72,7 @@ class HHClient:
             "name": " ".join(title_link.stripped_strings),
             "employer": {"name": employer_name},
             "alternate_url": f"https://hh.ru/vacancy/{vacancy_id}",
+            "source": HH,
         }
 
     async def close(self) -> None:

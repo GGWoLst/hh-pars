@@ -53,7 +53,8 @@ class FoundVacancy(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     preset_id: Mapped[int] = mapped_column(ForeignKey("search_presets.id"))
-    vacancy_id: Mapped[str] = mapped_column(String)  # id вакансии на hh.ru
+    # id на площадке: у hh.ru — число, у Хабр Карьеры — "habr:<id>" (см. src/sources.py)
+    vacancy_id: Mapped[str] = mapped_column(String)
     name: Mapped[str] = mapped_column(String)
     employer: Mapped[str | None] = mapped_column(String, nullable=True)
     url: Mapped[str] = mapped_column(String)

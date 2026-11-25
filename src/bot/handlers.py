@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from src.bot.keyboards import MAIN_MENU_CHECK_NOW, main_menu_kb
-from src.parser import check_new_vacancies_for_user, format_vacancy
+from src.parser import check_new_vacancies_for_user, format_vacancy, send_vacancy
 from src.storage.db import get_session
 from src.storage.models import User
 
@@ -19,7 +19,7 @@ async def cmd_start(message: Message) -> None:
             await session.commit()
 
     await message.answer(
-        "Привет! Я бот-парсер вакансий hh.ru.\n\n"
+        "Привет! Я бот-парсер вакансий hh.ru и Хабр Карьеры.\n\n"
         "Заведи пресет мониторинга (профессия, стек, грейд, регион) — буду проверять "
         "новые вакансии по нему и присылать сюда. Плюс можно выгрузить всё найденное в Excel.",
         reply_markup=main_menu_kb(),
@@ -40,7 +40,7 @@ async def cmd_check_now(message: Message) -> None:
     for preset, new_items in results:
         for item in new_items:
             found_any = True
-            await message.answer(format_vacancy(item, preset))
+            await send_vacancy(message.bot, message.chat.id, format_vacancy(item, preset))
 
     if not found_any:
         await message.answer("Новых вакансий по твоим пресетам не найдено.")

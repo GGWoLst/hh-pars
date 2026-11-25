@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # Пример: socks5://17.9.7.5:1080
     hh_proxy_url: str = ""
 
+    # Хабр Карьера — второй источник вакансий. Ходит через тот же HH_PROXY_URL
+    # и с тем же HH_USER_AGENT, что и hh.ru.
+    habr_enabled: bool = True
+
     # Telegram
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

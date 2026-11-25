@@ -1,16 +1,37 @@
 # hh-pars
 
-Telegram-бот (`@ggparswolstbot`), который по пресетам пользователей парсит вакансии
-с hh.ru (HTML-страница поиска — JSON API отдаёт 403 датацентровым IP) и присылает новые в чат.
+Telegram-бот (`@ggparswolstbot`), который по пресетам пользователей собирает вакансии
+с hh.ru и Хабр Карьеры и присылает новые в чат.
 
 Стек: Python 3.12, aiogram 3, httpx, SQLAlchemy (async) + PostgreSQL, APScheduler, Docker.
+
+## Источники
+
+- **hh.ru** — HTML-страница поиска, ищет по названию вакансии. JSON API (api.hh.ru) отдаёт 403
+  анонимам с датацентровых IP, поэтому не используется.
+- **Хабр Карьера** — JSON страницы `/vacancies` (`/api/frontend/vacancies`), фильтры по id:
+  специализация, навык, грейд, город. Официальный API Хабра — только для работодателей.
+  Площадка небольшая (~1,8 тыс. вакансий), это добавка к hh.ru. Соответствие кодов пресета
+  и id Хабра — словари `HABR_*` в [src/bot/keyboards.py](src/bot/keyboards.py). Отключается
+  `HABR_ENABLED=false`.
+
+Особенности:
+
+- одна и та же вакансия на обеих площадках приходит один раз: повтор с другой площадки
+  узнаётся по названию и компании среди найденного за 30 дней;
+- у пресетов, заведённых до подключения площадки, её первая выдача сохраняется без рассылки
+  (видна в Excel-отчёте), дальше — как обычно;
+- «Вся Россия» на Хабре ищет без города (такого фильтра там нет), стаж hh.ru переведён в
+  грейды примерно, а при выбранном опыте вакансии без грейда (~15% на Хабре) не попадают.
 
 ## Структура
 
 ```
 src/
   config.py        # настройки из .env (pydantic-settings)
+  sources.py        # площадки: метки, префиксы id
   hh_client.py      # парсер страницы поиска hh.ru
+  habr_client.py    # клиент поиска Хабр Карьеры
   parser.py         # логика поиска новых вакансий и сохранения в БД
   bot/handlers.py   # хендлеры aiogram
   storage/          # SQLAlchemy модели + подключение к БД
@@ -34,7 +55,8 @@ docker compose up --build
   доступ к приватным данным hh.ru API (обычный поиск вакансий работает без токена, но требует `HH_USER_AGENT`).
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — бот и чат для уведомлений.
 - `DATABASE_URL` — строка подключения к PostgreSQL.
-- `HH_PROXY_URL` — прокси для запросов к hh.ru (на главном узле — SOCKS RU-ноды).
+- `HH_PROXY_URL` — прокси для запросов к hh.ru и Хабр Карьере (на главном узле — SOCKS RU-ноды).
+- `HABR_ENABLED` — искать ли ещё и на Хабр Карьере (по умолчанию `true`).
 - `TELEGRAM_PROXY_URL` — прокси к Telegram API, только где он заблокирован.
 - `PARSE_INTERVAL_MINUTES`, `HH_SEARCH_TEXT`, `HH_SEARCH_AREA` — параметры парсинга.
 
@@ -64,7 +86,7 @@ docker compose up --build
   В `.env` заданы `COMPOSE_FILE=docker-compose.prod.yml` и `HH_PARS_IMAGE` — поэтому
   `docker compose ps/logs/up` там работают без `-f`;
 - Telegram — напрямую (WARP, как на старом сервере, не нужен);
-- hh.ru — через SOCKS5 RU-ноды: `HH_PROXY_URL=socks5://17.9.7.5:1080` (доступ с главного узла
+- hh.ru и Хабр Карьера — через SOCKS5 RU-ноды: `HH_PROXY_URL=socks5://17.9.7.5:1080` (доступ с главного узла
   разрешён на стороне ноды);
 - `deploy.sh` — копия [deploy/server-deploy.sh](deploy/server-deploy.sh) в `/root/scripts/hh-pars/`,
   принудительная команда ключа деплоя в `authorized_keys` (`command=…,restrict`): ключ из
