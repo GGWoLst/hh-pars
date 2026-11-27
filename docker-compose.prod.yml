@@ -38,7 +38,9 @@ services:
       - db_data:/var/lib/postgresql/data
     mem_limit: 512m
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hh}"]
+      # -d обязателен: без него pg_isready идёт в базу с именем пользователя («hh»), которой нет, и Postgres
+      # пишет «FATAL: database "hh" does not exist» на каждую проверку (раз в 5 с).
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hh} -d ${POSTGRES_DB:-hh_pars}"]
       interval: 5s
       timeout: 5s
       retries: 10
